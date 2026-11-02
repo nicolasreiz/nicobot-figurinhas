@@ -64,6 +64,9 @@ client.on('message_create', async (msg) => {
             `Vídeos: no máximo ${DURACAO_MAX_VIDEO} segundos.`
         );
     }
+    if (texto === '!ping') {
+        return msg.reply('🏓 pong!');
+    }
 
     if (texto !== COMANDO) return;
 
