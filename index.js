@@ -6,6 +6,8 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { execSync } = require('child_process');
+const { interagirEmGrupos } = require('./interacoes'); // INTERAÇÕES (pode apagar)
+const { baixarMidia, consertarId } = require('./midia');
 
 // ---------- Configurações ----------
 const COMANDO = '!fig';
@@ -54,12 +56,14 @@ client.on('disconnected', (motivo) => console.log('⚠️ Desconectado:', motivo
 // 'message_create' pega mensagens recebidas E as que você mesmo envia,
 // assim dá pra testar mandando mensagem pra você mesmo.
 client.on('message_create', async (msg) => {
+    consertarId(msg); // precisa vir primeiro: sem isso reply, react e download falham
     const texto = (msg.body || '').trim().toLowerCase();
 
     if (texto === '!ajuda' || texto === '!help') {
         return msg.reply(
             '🤖 *Olá, eu sou o NicoBot, seu bot de Figurinhas*\n\n' +
-            `• Envie uma *imagem* ou *vídeo curto* com a legenda *${COMANDO}*\n` +
+            `• No privado: é só mandar uma *imagem* ou *vídeo curto*!\n` +
+            `• Em grupos: mande com a legenda *${COMANDO}*\n` +
             `• Ou responda a uma imagem/vídeo com *${COMANDO}*\n\n` +
             `Vídeos: no máximo ${DURACAO_MAX_VIDEO} segundos.`
         );
@@ -68,13 +72,21 @@ client.on('message_create', async (msg) => {
         return msg.reply('🏓 pong!');
     }
 
-    if (texto !== COMANDO) return;
+    interagirEmGrupos(msg); // INTERAÇÕES (pode apagar)
 
+    // No PRIVADO, qualquer foto ou vídeo vira figurinha automaticamente.
+    // Nos GRUPOS continua precisando do !fig (senão toda foto do grupo viraria figurinha).
+    // "!msg.fromMe" é essencial: sem ele o bot tentaria transformar a própria figurinha que acabou de mandar, sem parar.
+    const ehGrupo = msg.from.endsWith('@g.us');
+    const automatico = !msg.fromMe && !ehGrupo && msg.hasMedia && ['image', 'video'].includes(msg.type);
+
+    if (texto !== COMANDO && !automatico) return;
+
+    let alvo = msg;
     try {
         // 1) A mídia está na própria mensagem, ou na mensagem respondida?
-        let alvo = msg;
         if (!msg.hasMedia && msg.hasQuotedMsg) {
-            alvo = await msg.getQuotedMessage();
+            alvo = consertarId(await msg.getQuotedMessage());
         }
 
         if (!alvo.hasMedia) {
@@ -91,7 +103,7 @@ client.on('message_create', async (msg) => {
         }
 
         // 3) Baixa a mídia
-        const media = await alvo.downloadMedia();
+        const media = await baixarMidia(client, alvo); // em vez de alvo.downloadMedia(), que está com bug
         if (!media) {
             return msg.reply('❌ Não consegui baixar a mídia. Tente enviar de novo.');
         }
